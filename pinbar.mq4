@@ -3,11 +3,15 @@
 //| This EA identifies pin bars with the tail 3x longer than the body|
 //+------------------------------------------------------------------+
 #property strict
+#property description "This Expert Advisor identifies pin bars where the tail is at least three times longer than the body and touches an 8-period moving average."
+#property description "The EA highlights detected pin bars on the chart and alerts the user when such formations occur."
+#property description "The detection considers moving average direction and pin bar crossing conditions."
 
 // Input parameters
-input double LotSize = 0.1;       // Lot size for orders
+input double LotSize = 0.01;       // Lot size for orders
 input int StopLossPips = 20;      // Stop loss in pips
 input int TakeProfitPips = 40;    // Take profit in pips
+input int TrendCandleCount = 6;   // Number of candles to determine the trend
 
 // Function to check if a candle is a pin bar
 bool IsPinBar(int i) {
@@ -45,16 +49,42 @@ int PinBarDirection(int i) {
    return 0;
 }
 
-// Function to check if pin bar interacts with the moving average
-bool IsPinBarOnMovingAverage(int i, int maPeriod) {
+// Function to determine if the moving average is trending up or down based on recent candles
+int MovingAverageTrend(int maPeriod, int candles) {
+   double sum = 0;
+   for (int i = 0; i < candles - 1; i++) {
+      double currentMA = iMA(NULL, 0, maPeriod, 0, MODE_SMA, PRICE_CLOSE, i);
+      double previousMA = iMA(NULL, 0, maPeriod, 0, MODE_SMA, PRICE_CLOSE, i + 1);
+      sum += (currentMA - previousMA);
+   }
+
+   if (sum > 0) {
+      return 1; // Uptrend
+   } else if (sum < 0) {
+      return -1; // Downtrend
+   } else {
+      return 0; // Sideways
+   }
+}
+
+// Function to check if pin bar interacts with the moving average and satisfies crossing conditions
+bool IsPinBarOnMovingAverage(int i, int maPeriod, int trendCandles) {
    double maValue = iMA(NULL, 0, maPeriod, 0, MODE_SMA, PRICE_CLOSE, i);
    double high = iHigh(NULL, 0, i);
    double low = iLow(NULL, 0, i);
 
-   // Check if the pin bar touches the moving average
-   if (low <= maValue && high >= maValue) {
+   int trend = MovingAverageTrend(maPeriod, trendCandles);
+
+   // Check if the moving average is trending down and the pin bar crosses it from below upwards
+   if (trend == -1 && low < maValue && high > maValue) {
       return true;
    }
+
+   // Check if the moving average is trending up and the pin bar crosses it from above downwards
+   if (trend == 1 && high > maValue && low < maValue) {
+      return true;
+   }
+
    return false;
 }
 
@@ -86,7 +116,7 @@ void OnTick() {
 
    lastCandleChecked = candleTime;
 
-   if (IsPinBar(currentCandle) && IsPinBarOnMovingAverage(currentCandle, 8)) {
+   if (IsPinBar(currentCandle) && IsPinBarOnMovingAverage(currentCandle, 8, TrendCandleCount)) {
       int direction = PinBarDirection(currentCandle);
 
       // Draw a blue rectangle around the detected pin bar
@@ -94,21 +124,16 @@ void OnTick() {
       double low = iLow(NULL, 0, currentCandle);
       datetime time = iTime(NULL, 0, currentCandle);
       datetime timeNext = iTime(NULL, 0, currentCandle - 1);
-      ObjectCreate(0, "PinBar_" + TimeToString(time, TIME_DATE | TIME_MINUTES), OBJ_RECTANGLE, 0, time, high, timeNext, low);
-      ObjectSetInteger(0, "PinBar_" + TimeToString(time, TIME_DATE | TIME_MINUTES), OBJPROP_COLOR, clrBlue);
-      ObjectSetInteger(0, "PinBar_" + TimeToString(time, TIME_DATE | TIME_MINUTES), OBJPROP_STYLE, STYLE_SOLID);
 
       if (direction == 1) {
          // Bullish pin bar: Open a buy order
          double sl = iLow(NULL, 0, currentCandle) - StopLossPips * Point;
          double tp = iHigh(NULL, 0, currentCandle) + TakeProfitPips * Point;
-         // OrderSend(Symbol(), OP_BUY, LotSize, Ask, 3, sl, tp, "Pin Bar Buy", 0, 0, Green);
          Alert("Bullish Pin Bar detected on ", Symbol(), " at ", TimeToString(candleTime));
       } else if (direction == -1) {
          // Bearish pin bar: Open a sell order
          double sl = iHigh(NULL, 0, currentCandle) + StopLossPips * Point;
          double tp = iLow(NULL, 0, currentCandle) - TakeProfitPips * Point;
-         // OrderSend(Symbol(), OP_SELL, LotSize, Bid, 3, sl, tp, "Pin Bar Sell", 0, 0, Red);
          Alert("Bearish Pin Bar detected on ", Symbol(), " at ", TimeToString(candleTime));
       }
    }
