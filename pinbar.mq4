@@ -119,7 +119,6 @@ void OnTick() {
    if (IsPinBar(currentCandle) && IsPinBarOnMovingAverage(currentCandle, 8, TrendCandleCount)) {
       int direction = PinBarDirection(currentCandle);
 
-      // Draw a blue rectangle around the detected pin bar
       double high = iHigh(NULL, 0, currentCandle);
       double low = iLow(NULL, 0, currentCandle);
       datetime time = iTime(NULL, 0, currentCandle);
